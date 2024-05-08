@@ -42,7 +42,7 @@ class Document:
     captions: List[QueryCaptionResult]
     score: Optional[float] = None
     reranker_score: Optional[float] = None
-
+    # Serialize the document for the results
     def serialize_for_results(self) -> dict[str, Any]:
         return {
             "id": self.id,
@@ -69,7 +69,7 @@ class Document:
             "score": self.score,
             "reranker_score": self.reranker_score,
         }
-
+    # Trim the embedding to show only the first 2 items followed by the count of the remaining items
     @classmethod
     def trim_embedding(cls, embedding: Optional[List[float]]) -> Optional[str]:
         """Returns a trimmed list of floats from the vector embedding."""
@@ -82,7 +82,7 @@ class Document:
 
         return None
 
-
+# Define the thought step
 @dataclass
 class ThoughtStep:
     title: str
@@ -116,7 +116,7 @@ class Approach(ABC):
         self.openai_host = openai_host
         self.vision_endpoint = vision_endpoint
         self.vision_token_provider = vision_token_provider
-
+    # Build the filter for the search query
     def build_filter(self, overrides: dict[str, Any], auth_claims: dict[str, Any]) -> Optional[str]:
         exclude_category = overrides.get("exclude_category")
         security_filter = self.auth_helper.build_security_filters(overrides, auth_claims)
@@ -126,7 +126,7 @@ class Approach(ABC):
         if security_filter:
             filters.append(security_filter)
         return None if len(filters) == 0 else " and ".join(filters)
-
+    # Search for documents using the Azure Cognitive Search service
     async def search(
         self,
         top: int,
@@ -151,11 +151,13 @@ class Approach(ABC):
                 query_caption="extractive|highlight-false" if use_semantic_captions else None,
                 vector_queries=vectors,
             )
+            # If the semantic ranker fails, fall back to the regular search
         else:
             results = await self.search_client.search(
                 search_text=query_text or "", filter=filter, top=top, vector_queries=vectors
             )
 
+    # Collect the results
         documents = []
         async for page in results.by_page():
             async for document in page:
@@ -176,6 +178,7 @@ class Approach(ABC):
                     )
                 )
 
+        # Filter out documents that don't meet the minimum scores
             qualified_documents = [
                 doc
                 for doc in documents
@@ -186,7 +189,7 @@ class Approach(ABC):
             ]
 
         return qualified_documents
-
+    # Get the content of the sources
     def get_sources_content(
         self, results: List[Document], use_semantic_captions: bool, use_image_citation: bool
     ) -> list[str]:
@@ -202,7 +205,7 @@ class Approach(ABC):
                 (self.get_citation((doc.sourcepage or ""), use_image_citation)) + ": " + nonewlines(doc.content or "")
                 for doc in results
             ]
-
+    # Get the citation for the sources
     def get_citation(self, sourcepage: str, use_image_citation: bool) -> str:
         if use_image_citation:
             return sourcepage
@@ -214,7 +217,7 @@ class Approach(ABC):
                 return f"{path[:page_idx]}.pdf#page={page_number}"
 
             return sourcepage
-
+    # Compute the text embedding
     async def compute_text_embedding(self, q: str):
         SUPPORTED_DIMENSIONS_MODEL = {
             "text-embedding-ada-002": False,
@@ -236,7 +239,7 @@ class Approach(ABC):
         )
         query_vector = embedding.data[0].embedding
         return VectorizedQuery(vector=query_vector, k_nearest_neighbors=50, fields="embedding")
-
+    # Compute the image embedding
     async def compute_image_embedding(self, q: str):
         endpoint = urljoin(self.vision_endpoint, "computervision/retrieval:vectorizeText")
         headers = {"Content-Type": "application/json"}
@@ -252,7 +255,7 @@ class Approach(ABC):
                 json = await response.json()
                 image_query_vector = json["vector"]
         return VectorizedQuery(vector=image_query_vector, k_nearest_neighbors=50, fields="imageEmbedding")
-
+    # Run the approach
     async def run(
         self, messages: list[dict], stream: bool = False, session_state: Any = None, context: dict[str, Any] = {}
     ) -> Union[dict[str, Any], AsyncGenerator[dict[str, Any], None]]:
